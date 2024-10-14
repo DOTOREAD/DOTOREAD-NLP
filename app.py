@@ -67,9 +67,5 @@ def lda_topic_extraction():
     # ensure_ascii=False로 한국어를 그대로 반환
     return json.dumps({"topic": top_keyword}, ensure_ascii=False)
 
-@app.route('/test', methods=['GET'])
-def test():
-    return json.dumps({"test": "GOOD"}, ensure_ascii=False)
-
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5001)
