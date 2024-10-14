@@ -66,4 +66,4 @@ def lda_topic_extraction():
     return json.dumps({"topic": top_keyword}, ensure_ascii=False)
 
 if __name__ == "__main__":
-    app.run(port=5001)
+    app.run(host='0.0.0.0', port=5001)
