@@ -1,20 +1,28 @@
-FROM python:3.8-slim  
+FROM python:3.9
 
-# 기본 패키지 설치 (chromedriver 포함)
-RUN apt-get update && \
-    apt-get install -y wget unzip chromium-driver && \
-    apt-get clean  
+# Chrome 설치
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list
+RUN apt-get update && apt-get install -y google-chrome-stable
 
-# Flask 앱과 필요한 파일 복사
-COPY app.py /app/app.py  
-COPY stopwordlist.txt /app/stopwordlist.txt  
-COPY requirements.txt /app/requirements.txt  
+# ChromeDriver 설치
+RUN CHROME_DRIVER_VERSION=`curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE` && \
+    wget -N http://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip -P ~/ && \
+    unzip ~/chromedriver_linux64.zip -d ~/ && \
+    rm ~/chromedriver_linux64.zip && \
+    mv -f ~/chromedriver /usr/local/bin/chromedriver && \
+    chown root:root /usr/local/bin/chromedriver && \
+    chmod 0755 /usr/local/bin/chromedriver
 
-WORKDIR /app  
+WORKDIR /app
 
-# Python 패키지 설치
-RUN pip install --no-cache-dir -r requirements.txt  
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Flask 서버 실행
-EXPOSE 5001  
+COPY . .
+
+ENV CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
+
+EXPOSE 5001
+
 CMD ["python", "app.py"]
