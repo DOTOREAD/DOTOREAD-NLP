@@ -8,8 +8,10 @@ from gensim.models import LdaModel
 from konlpy.tag import Okt
 import re
 import json
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 # 전처리 관련 함수
 def clean_text(text):
