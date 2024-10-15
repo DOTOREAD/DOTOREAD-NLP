@@ -11,9 +11,30 @@ import json
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
+from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# 웹 크롤링 함수
+def crawl_website(url):
+    """주어진 URL의 웹사이트를 크롤링하여 제목과 텍스트 추출"""
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    
+    # 페이지 제목 추출
+    title = soup.title.string if soup.title else ""
+    
+    # 주요 콘텐츠가 있는 태그를 선택 (예: <p>, <article> 등)
+    text_elements = soup.find_all(['p', 'article', 'div', 'span'])
+    
+    # 추출된 텍스트를 하나의 문자열로 결합
+    text = ' '.join([elem.get_text() for elem in text_elements])
+    
+    # 제목과 본문 텍스트를 결합
+    full_text = title + " " + text
+    
+    return full_text
 
 # 전처리 관련 함수
 def clean_text(text):
@@ -51,38 +72,14 @@ def get_top_keyword(lda_model):
     top_keywords = [word.split("*")[1].strip('" ') for word in topics[0][1].split("+")]
     return top_keywords[0]  # 가장 중요한 키워드 반환
 
-# 웹 크롤링 함수 추가
-def crawl_url(url):
-    """주어진 URL의 웹 페이지를 크롤링하여 텍스트 추출"""
-    try:
-        response = requests.get(url)
-        response.raise_for_status()  # 오류 발생 시 예외 발생
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 텍스트 추출 (예: <p> 태그 내의 텍스트)
-        paragraphs = soup.find_all('p')
-        text = ' '.join([p.get_text() for p in paragraphs])
-        
-        return text
-    except requests.RequestException as e:
-        print(f"크롤링 중 오류 발생: {e}")
-        return None
-
 @app.route('/lda', methods=['POST'])
 def lda_topic_extraction():
-    data = request.json
-    raw_text = data.get('text')
-    url = data.get('url')
-    stopwords = data.get('stopwords', [])
+    # 요청에서 URL과 불용어 리스트 가져오기
+    url = request.json.get('url')
+    stopwords = request.json.get('stopwords', [])
 
-    if url:
-        # URL이 제공된 경우 크롤링 수행
-        raw_text = crawl_url(url)
-        if raw_text is None:
-            return json.dumps({"error": "크롤링 실패"}, ensure_ascii=False), 400
-
-    if not raw_text:
-        return json.dumps({"error": "텍스트 또는 유효한 URL을 제공해주세요"}, ensure_ascii=False), 400
+    # URL에서 텍스트 크롤링 (제목 포함)
+    raw_text = crawl_website(url)
 
     # 전처리 수행
     preprocessed_text = preprocess_text(raw_text, stopwords)
