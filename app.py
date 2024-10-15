@@ -9,6 +9,8 @@ from konlpy.tag import Okt
 import re
 import json
 from flask_cors import CORS
+import requests
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 CORS(app)
@@ -49,11 +51,38 @@ def get_top_keyword(lda_model):
     top_keywords = [word.split("*")[1].strip('" ') for word in topics[0][1].split("+")]
     return top_keywords[0]  # 가장 중요한 키워드 반환
 
+# 웹 크롤링 함수 추가
+def crawl_url(url):
+    """주어진 URL의 웹 페이지를 크롤링하여 텍스트 추출"""
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # 오류 발생 시 예외 발생
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 텍스트 추출 (예: <p> 태그 내의 텍스트)
+        paragraphs = soup.find_all('p')
+        text = ' '.join([p.get_text() for p in paragraphs])
+        
+        return text
+    except requests.RequestException as e:
+        print(f"크롤링 중 오류 발생: {e}")
+        return None
+
 @app.route('/lda', methods=['POST'])
 def lda_topic_extraction():
-    # 요청에서 텍스트와 불용어 리스트 가져오기
-    raw_text = request.json.get('text')
-    stopwords = request.json.get('stopwords', [])
+    data = request.json
+    raw_text = data.get('text')
+    url = data.get('url')
+    stopwords = data.get('stopwords', [])
+
+    if url:
+        # URL이 제공된 경우 크롤링 수행
+        raw_text = crawl_url(url)
+        if raw_text is None:
+            return json.dumps({"error": "크롤링 실패"}, ensure_ascii=False), 400
+
+    if not raw_text:
+        return json.dumps({"error": "텍스트 또는 유효한 URL을 제공해주세요"}, ensure_ascii=False), 400
 
     # 전처리 수행
     preprocessed_text = preprocess_text(raw_text, stopwords)
