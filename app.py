@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
@@ -51,6 +51,28 @@ def get_website_title(url):
     soup = BeautifulSoup(response.content, 'html.parser')
     title = soup.title.string if soup.title else ""
     return title
+
+# 이미지 추출 함수
+def get_image_url(url):
+    """URL의 본문에서 첫 번째 이미지 URL을 추출"""
+    response = requests.get(url)
+
+    response = requests.get(url) # url 본문에서 외부 url을 가진 첫 번째 이미지 url만 가져옴
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    content = soup.find('article') or soup.find('div', class_='content') or soup.find('div', id='main-content')
+
+    # 본문 영역이 없을 경우
+    if not content:
+        return None
+
+    # 첫번째 이미지 URL 추출
+    for img_tag in content.find_all('img'):
+        img_url = img_tag.get('src')
+        if img_url and (img_url.startswith('http://') or img_url.startswith('https://')):
+            return img_url
+
+    return None 
 
 # 전처리 관련 함수
 def clean_text(text):
@@ -120,6 +142,15 @@ def get_title():
 
     title = get_website_title(url)
     return json.dumps({"title": title}, ensure_ascii=False)
+
+@app.route('/images', methods=['POST'])
+def image_urls():
+    blog_url = request.json.get('url')
+    if not blog_url:
+        return jsonify({"error": "URL이 필요합니다."}), 400
+
+    image_url = get_image_url(blog_url)
+    return jsonify({"image_url": image_url})
 
 
 if __name__ == "__main__":
