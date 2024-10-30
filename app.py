@@ -16,10 +16,18 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+<<<<<<< HEAD
 # 웹 크롤링 함수
 def crawl_website(url):
     """주어진 URL의 웹사이트를 크롤링하여 제목과 텍스트 추출"""
     response = requests.get(url)
+=======
+# 전체 텍스트 크롤링 함수
+def crawl_website(url):
+    """주어진 URL의 웹사이트를 크롤링하여 제목과 텍스트 추출"""
+    response = requests.get(url)
+    
+>>>>>>> d10f215 (feat: 제목 추출)
     soup = BeautifulSoup(response.content, 'html.parser')
     
     # 페이지 제목 추출
@@ -35,6 +43,17 @@ def crawl_website(url):
     full_text = title + " " + text
     
     return full_text
+<<<<<<< HEAD
+=======
+
+# 제목 크롤링 함수
+def get_website_title(url):
+    """주어진 URL의 웹사이트 제목을 추출"""
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    title = soup.title.string if soup.title else ""
+    return title
+>>>>>>> d10f215 (feat: 제목 추출)
 
 # 전처리 관련 함수
 def clean_text(text):
@@ -72,10 +91,16 @@ def get_top_keyword(lda_model):
     top_keywords = [word.split("*")[1].strip('" ') for word in topics[0][1].split("+")]
     return top_keywords[0]  # 가장 중요한 키워드 반환
 
-@app.route('/lda', methods=['POST'])
+@app.route('/keyword', methods=['POST'])
 def lda_topic_extraction():
     # 요청에서 URL과 불용어 리스트 가져오기
     url = request.json.get('url')
+<<<<<<< HEAD
+=======
+    if not url:
+      return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
+
+>>>>>>> d10f215 (feat: 제목 추출)
     stopwords = request.json.get('stopwords', [])
 
     # URL에서 텍스트 크롤링 (제목 포함)
@@ -92,6 +117,20 @@ def lda_topic_extraction():
 
     # ensure_ascii=False로 한국어를 그대로 반환
     return json.dumps({"topic": top_keyword}, ensure_ascii=False)
+
+@app.route('/title', methods=['POST'])
+def get_title():
+    # 요청에서 URL 가져오기
+    url = request.json.get('url')
+    if not url:
+        return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
+
+    # URL에서 제목 추출
+    title = get_website_title(url)
+
+    # JSON 형식으로 제목 반환
+    return json.dumps({"title": title}, ensure_ascii=False)
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5001)
