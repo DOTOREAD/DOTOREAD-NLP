@@ -16,18 +16,10 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-<<<<<<< HEAD
 # 웹 크롤링 함수
 def crawl_website(url):
     """주어진 URL의 웹사이트를 크롤링하여 제목과 텍스트 추출"""
     response = requests.get(url)
-=======
-# 전체 텍스트 크롤링 함수
-def crawl_website(url):
-    """주어진 URL의 웹사이트를 크롤링하여 제목과 텍스트 추출"""
-    response = requests.get(url)
-    
->>>>>>> d10f215 (feat: 제목 추출)
     soup = BeautifulSoup(response.content, 'html.parser')
     
     # 페이지 제목 추출
@@ -42,9 +34,7 @@ def crawl_website(url):
     # 제목과 본문 텍스트를 결합
     full_text = title + " " + text
     
-    return full_text
-<<<<<<< HEAD
-=======
+    return full_tex
 
 # 제목 크롤링 함수
 def get_website_title(url):
@@ -53,7 +43,6 @@ def get_website_title(url):
     soup = BeautifulSoup(response.content, 'html.parser')
     title = soup.title.string if soup.title else ""
     return title
->>>>>>> d10f215 (feat: 제목 추출)
 
 # 전처리 관련 함수
 def clean_text(text):
@@ -95,12 +84,9 @@ def get_top_keyword(lda_model):
 def lda_topic_extraction():
     # 요청에서 URL과 불용어 리스트 가져오기
     url = request.json.get('url')
-<<<<<<< HEAD
-=======
     if not url:
-      return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
+        return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
 
->>>>>>> d10f215 (feat: 제목 추출)
     stopwords = request.json.get('stopwords', [])
 
     # URL에서 텍스트 크롤링 (제목 포함)
