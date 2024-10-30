@@ -16,6 +16,14 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+# 불용어 리스트
+def load_stopwords(filepath="stopwordlist.txt"):
+    with open(filepath, "r", encoding="utf-8") as file:
+        stopwords = file.read().splitlines()
+    return stopwords
+
+default_stopwords = load_stopwords() 
+
 # 웹 크롤링 함수
 def crawl_website(url):
     """주어진 URL의 웹사이트를 크롤링하여 제목과 텍스트 추출"""
@@ -58,7 +66,7 @@ def extract_nouns(text):
     valid_nouns = [word for word, pos in tokens if pos in ['Noun', 'Adjective']]
     return valid_nouns
 
-def preprocess_text(text, stopwords=[]):
+def preprocess_text(text, stopwords=default_stopwords):
     """텍스트 전처리 및 명사 추출"""
     cleaned_text = clean_text(text)
     tokenized_text = extract_nouns(cleaned_text)
@@ -82,12 +90,11 @@ def get_top_keyword(lda_model):
 
 @app.route('/keyword', methods=['POST'])
 def lda_topic_extraction():
-    # 요청에서 URL과 불용어 리스트 가져오기
     url = request.json.get('url')
     if not url:
         return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
 
-    stopwords = request.json.get('stopwords', [])
+    stopwords = request.json.get('stopwords', default_stopwords)
 
     # URL에서 텍스트 크롤링 (제목 포함)
     raw_text = crawl_website(url)
@@ -111,10 +118,7 @@ def get_title():
     if not url:
         return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
 
-    # URL에서 제목 추출
     title = get_website_title(url)
-
-    # JSON 형식으로 제목 반환
     return json.dumps({"title": title}, ensure_ascii=False)
 
 
