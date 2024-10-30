@@ -34,7 +34,7 @@ def crawl_website(url):
     # 제목과 본문 텍스트를 결합
     full_text = title + " " + text
     
-    return full_tex
+    return full_text
 
 # 제목 크롤링 함수
 def get_website_title(url):
