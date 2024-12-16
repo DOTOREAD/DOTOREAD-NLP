@@ -3,25 +3,37 @@ from sentence_transformers import SentenceTransformer, util
 from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.feature_extraction.text import CountVectorizer
 from bs4 import BeautifulSoup
-import requests
+
 import re
+import json
+import requests
+from flask_cors import CORS
 
 model = SentenceTransformer("snunlp/KR-SBERT-V40K-klueNLI-augSTS")
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 def load_stopwords(filepath="stopwordlist.txt"):
-    try:
-        with open(filepath, "r", encoding="utf-8") as file:
-            stopwords = file.read().splitlines()
-        return stopwords
-    except Exception as e:
-        print(f"불용어 로드 실패: {e}")
-        return []
+    with open(filepath, "r", encoding="utf-8") as file:
+        stopwords = file.read().splitlines()
+    return stopwords
 
 stopwords = load_stopwords()
 
-def crawl_website(url):
+def error_response(message, status_code=400):
+    return jsonify({
+        "error": message,
+        "status_code": status_code
+    }), status_code
+
+def crawl_website_title(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    title = soup.title.string if soup.title else ""
+    return title
+
+def crawl_website_text(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
     text_elements = soup.find_all(['p', 'article', 'div', 'span'])
@@ -34,6 +46,44 @@ def preprocess_text(text, stopwords):
     text = re.sub(r'\s+', ' ', text).strip()
     filtered_words = [word for word in text.split() if word not in stopwords]
     return ' '.join(filtered_words)
+
+def get_image_url(url):
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        img_tags = soup.find_all('img')
+
+        image_urls = []
+        for img_tag in img_tags:
+            img_url = img_tag.get('src')
+            if img_url:
+                if not (img_url.startswith('http://') or img_url.startswith('https://')):
+                    img_url = requests.compat.urljoin(url, img_url)
+
+                if any(keyword in img_url.lower() for keyword in ['icon', 'logo', 'favicon', 'small']):
+                    continue
+
+                if img_url.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg')):
+                    width = img_tag.get('width')
+                    height = img_tag.get('height')
+                    if width and height and (int(width) < 50 or int(height) < 50):  # 크기 제한
+                        continue
+
+                    image_urls.append(img_url)
+
+        if not image_urls:
+            return None
+
+        if len(image_urls) > 3:
+            return image_urls[len(image_urls) // 2]
+        elif len(image_urls) > 1:
+            return image_urls[-1]
+        else:
+            return image_urls[0]
+
+    except Exception as e:
+        return None
 
 def extract_new_topics(text, num_topics=1):
     try:
@@ -48,7 +98,25 @@ def extract_new_topics(text, num_topics=1):
         return topic_keyword
 
     except Exception as e:
-        return f"폴더 추출에 실패했습니다. {str(e)}"
+            return error_response(f"폴더 추출에 실패했습니다. {str(e)}", 500)
+
+@app.route('/title', methods=['POST'])
+def get_title():
+    url = request.json.get('url')
+    if not url:
+        return error_response("URL이 필요합니다.", 400)
+
+    title = crawl_website_title(url)
+    return jsonify({"title": title})
+
+@app.route('/images', methods=['POST'])
+def image_urls():
+    blog_url = request.json.get('url')
+    if not blog_url:
+        return error_response("URL이 필요합니다.", 400)
+
+    image_url = get_image_url(blog_url)
+    return jsonify({"image_url": image_url})
 
 @app.route('/classify', methods=['POST'])
 def recommend_folder():
@@ -57,9 +125,8 @@ def recommend_folder():
         url = data.get("url")
         existing_folders = data.get("folders", [])
         if not url or not existing_folders:
-            return jsonify({"error": "URL과 기존 폴더 목록을 모두 제공해야 합니다."}), 400
-
-        raw_text = crawl_website(url)
+            return error_response("URL과 기존 폴더 목록을 모두 제공해야 합니다.", 400)
+        raw_text = crawl_website_text(url)
         if not raw_text.strip():
             return jsonify({
                 "전처리 텍스트": "",
@@ -96,7 +163,7 @@ def recommend_folder():
                 "새 폴더 추천": None
             })
     except Exception as e:
-        return jsonify({"error": str(e)})
+            return error_response(f"서버 내부 오류: {str(e)}", 500)
 
 if __name__ == '__main__':
     import multiprocessing
