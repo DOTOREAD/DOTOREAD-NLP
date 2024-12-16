@@ -1,157 +1,105 @@
 from flask import Flask, request, jsonify
-import warnings
-warnings.filterwarnings('ignore', category=FutureWarning)
-
-import pandas as pd
-from gensim import corpora
-from gensim.models import LdaModel
-from konlpy.tag import Okt
-import re
-import json
-from flask_cors import CORS
-import requests
+from sentence_transformers import SentenceTransformer, util
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer
 from bs4 import BeautifulSoup
-from flask_cors import CORS
+import requests
+import re
+
+model = SentenceTransformer("snunlp/KR-SBERT-V40K-klueNLI-augSTS")
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
 
-# 불용어 리스트
 def load_stopwords(filepath="stopwordlist.txt"):
-    with open(filepath, "r", encoding="utf-8") as file:
-        stopwords = file.read().splitlines()
-    return stopwords
+    try:
+        with open(filepath, "r", encoding="utf-8") as file:
+            stopwords = file.read().splitlines()
+        return stopwords
+    except Exception as e:
+        print(f"불용어 로드 실패: {e}")
+        return []
 
-default_stopwords = load_stopwords() 
+stopwords = load_stopwords()
 
-# 웹 크롤링 함수
 def crawl_website(url):
-    """주어진 URL의 웹사이트를 크롤링하여 제목과 텍스트 추출"""
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
-    
-    # 페이지 제목 추출
-    title = soup.title.string if soup.title else ""
-    
-    # 주요 콘텐츠가 있는 태그를 선택 (예: <p>, <article> 등)
     text_elements = soup.find_all(['p', 'article', 'div', 'span'])
-    
-    # 추출된 텍스트를 하나의 문자열로 결합
     text = ' '.join([elem.get_text() for elem in text_elements])
-    
-    # 제목과 본문 텍스트를 결합
-    full_text = title + " " + text
-    
-    return full_text
-
-# 제목 크롤링 함수
-def get_website_title(url):
-    """주어진 URL의 웹사이트 제목을 추출"""
-    response = requests.get(url)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    title = soup.title.string if soup.title else ""
-    return title
-
-# 이미지 추출 함수
-def get_image_url(url):
-    """URL의 본문에서 첫 번째 이미지 URL을 추출"""
-    response = requests.get(url)
-
-    response = requests.get(url) # url 본문에서 외부 url을 가진 첫 번째 이미지 url만 가져옴
-    soup = BeautifulSoup(response.content, 'html.parser')
-
-    content = soup.find('article') or soup.find('div', class_='content') or soup.find('div', id='main-content')
-
-    # 본문 영역이 없을 경우
-    if not content:
-        return None
-
-    # 첫번째 이미지 URL 추출
-    for img_tag in content.find_all('img'):
-        img_url = img_tag.get('src')
-        if img_url and (img_url.startswith('http://') or img_url.startswith('https://')):
-            return img_url
-
-    return None 
-
-# 전처리 관련 함수
-def clean_text(text):
-    """텍스트에서 특수문자와 이모지 제거"""
-    text = re.sub(r'[^가-힣a-zA-Z0-9\s]', ' ', text)  # 한글, 영어, 숫자, 공백만 유지
-    text = re.sub(r'\s+', ' ', text).strip()  # 공백 여러 개를 하나로 줄임
     return text
 
-def extract_nouns(text):
-    """주어진 텍스트에서 명사만 추출"""
-    okt = Okt()
-    tokens = okt.pos(text)
-    valid_nouns = [word for word, pos in tokens if pos in ['Noun', 'Adjective']]
-    return valid_nouns
+def preprocess_text(text, stopwords):
+    text = re.sub(r'\n+', ' ', text)
+    text = re.sub(r'[^가-힣a-zA-Z0-9\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    filtered_words = [word for word in text.split() if word not in stopwords]
+    return ' '.join(filtered_words)
 
-def preprocess_text(text, stopwords=default_stopwords):
-    """텍스트 전처리 및 명사 추출"""
-    cleaned_text = clean_text(text)
-    tokenized_text = extract_nouns(cleaned_text)
-    tokenized_text = [word for word in tokenized_text if word not in stopwords]
-    tokenized_text = [word for word in tokenized_text if len(word) > 1]
-    return tokenized_text
+def extract_new_topics(text, num_topics=1):
+    try:
+        vectorizer = CountVectorizer(stop_words=stopwords, max_df=1.0, min_df=1)
+        text_vectorized = vectorizer.fit_transform([text])
 
-def lda_modeling(tokenized_articles, num_topics=5):
-    """토큰화된 텍스트에 대해 LDA 모델링"""
-    dictionary = corpora.Dictionary(tokenized_articles)
-    corpus = [dictionary.doc2bow(text) for text in tokenized_articles]
-    lda_model = LdaModel(corpus=corpus, num_topics=num_topics, id2word=dictionary, passes=15)
-    return lda_model, corpus, dictionary
+        lda_model = LatentDirichletAllocation(n_components=num_topics, random_state=42)
+        lda_model.fit(text_vectorized)
 
-# 가장 중요한 키워드 추출 함수
-def get_top_keyword(lda_model):
-    """LDA 모델에서 가장 중요한 키워드를 추출"""
-    topics = lda_model.show_topics(num_words=10)
-    top_keywords = [word.split("*")[1].strip('" ') for word in topics[0][1].split("+")]
-    return top_keywords[0]  # 가장 중요한 키워드 반환
+        topic = lda_model.components_[0]
+        topic_keyword = vectorizer.get_feature_names_out()[topic.argsort()[-1]]
+        return topic_keyword
 
-@app.route('/keyword', methods=['POST'])
-def lda_topic_extraction():
-    url = request.json.get('url')
-    if not url:
-        return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
+    except Exception as e:
+        return f"폴더 추출에 실패했습니다. {str(e)}"
 
-    stopwords = request.json.get('stopwords', default_stopwords)
+@app.route('/classify', methods=['POST'])
+def recommend_folder():
+    try:
+        data = request.json
+        url = data.get("url")
+        existing_folders = data.get("folders", [])
+        if not url or not existing_folders:
+            return jsonify({"error": "URL과 기존 폴더 목록을 모두 제공해야 합니다."}), 400
 
-    # URL에서 텍스트 크롤링 (제목 포함)
-    raw_text = crawl_website(url)
+        raw_text = crawl_website(url)
+        if not raw_text.strip():
+            return jsonify({
+                "전처리 텍스트": "",
+                "폴더 분류": None,
+                "폴더 분류 유사도": 0,
+                "새 폴더 추천": None,
+                "error": "크롤링된 텍스트가 비어 있습니다."
+            }), 200
 
-    # 전처리 수행
-    preprocessed_text = preprocess_text(raw_text, stopwords)
+        processed_text = preprocess_text(raw_text, stopwords)
 
-    # LDA 모델링 수행
-    lda_model, corpus, dictionary = lda_modeling([preprocessed_text])
+        text_embedding = model.encode(processed_text, convert_to_tensor=True)
+        folder_embeddings = model.encode(existing_folders, convert_to_tensor=True)
+        cosine_scores = util.pytorch_cos_sim(text_embedding, folder_embeddings)
 
-    # 가장 적절한 키워드 추출
-    top_keyword = get_top_keyword(lda_model)
+        best_match_index = cosine_scores.argmax()
+        best_match_score = cosine_scores[0][best_match_index].item()
+        best_match_folder = existing_folders[best_match_index]
 
-    # ensure_ascii=False로 한국어를 그대로 반환
-    return json.dumps({"topic": top_keyword}, ensure_ascii=False)
+        threshold = 0.15
+        if best_match_score < threshold:
+            new_topics = extract_new_topics(processed_text)
+            return jsonify({
+                "전처리 텍스트": processed_text,
+                "폴더 분류": None,
+                "폴더 분류 유사도": best_match_score,
+                "새 폴더 추천": new_topics
+            })
+        else:
+            return jsonify({
+                "전처리 텍스트": processed_text,
+                "폴더 분류": best_match_folder,
+                "폴더 분류 유사도": best_match_score,
+                "새 폴더 추천": None
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
-@app.route('/title', methods=['POST'])
-def get_title():
-    # 요청에서 URL 가져오기
-    url = request.json.get('url')
-    if not url:
-        return json.dumps({"error": "URL이 필요합니다."}, ensure_ascii=False), 400
+if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.set_start_method("fork", force=True)
 
-    title = get_website_title(url)
-    return json.dumps({"title": title}, ensure_ascii=False)
-
-@app.route('/images', methods=['POST'])
-def image_urls():
-    blog_url = request.json.get('url')
-    if not blog_url:
-        return jsonify({"error": "URL이 필요합니다."}), 400
-
-    image_url = get_image_url(blog_url)
-    return jsonify({"image_url": image_url})
-
-
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5001)
+    app.run(host="0.0.0.0", port=5001)
